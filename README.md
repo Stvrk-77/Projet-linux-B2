@@ -1,3 +1,7 @@
+# Groupe de projet : 
+- Rodney NGUEMA
+- Mathéo MAUSSANT
+
 # 📄 Rapport Final de Projet d'Infrastructure Réseau et Services
 
 Ce document présente la configuration, le déploiement et la validation de l'infrastructure réseau et des services de l'entreprise, y compris la stratégie de résilience (Sauvegarde/Restauration).

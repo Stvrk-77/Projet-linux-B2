@@ -1,52 +1,74 @@
-# 📄 Rapport de Projet d'Infrastructure Réseau et Services
+# 📄 Rapport Final de Projet d'Infrastructure Réseau et Services
 
-Ce document présente la configuration, le déploiement et la validation de l'infrastructure réseau de l'entreprise, y compris la mise en place des services DNS, Web, et la stratégie de résilience (Sauvegarde/Restauration).
+Ce document présente la configuration, le déploiement et la validation de l'infrastructure réseau et des services de l'entreprise, y compris la stratégie de résilience (Sauvegarde/Restauration).
 
 ## I. Architecture et Adressage Réseau
 
-L'infrastructure est basée sur un réseau privé isolé (`Host-Only Network`) et utilise la machine **Routeur** comme passerelle (NAT) vers Internet.
+L'infrastructure utilise un réseau isolé pour le LAN (`192.168.56.0/24`), avec le Routeur comme passerelle. 
 
 ### 1. Plan d'Adressage
 
-| Rôle de la Machine | Adresse IP LAN | Interface LAN |
-| :--- | :--- | :--- |
-| **Routeur / DNS** | `192.168.56.3` | `enp0s8` |
-| **Serveur Web** | `192.168.56.10` | `enp0s8` |
-| **Client de Test** | `192.168.56.96` | `enp0s8` |
+| Rôle de la Machine | Adresse IP LAN | Interface LAN | Rôle WAN |
+| :--- | :--- | :--- | :--- |
+| **Routeur / DNS** | `192.168.56.3` | `enp0s8` | Passerelle NAT (`enp0s3`) |
+| **Serveur Web** | `192.168.56.10` | `enp0s3` | Non |
+| **Client de Test** | `192.168.56.96` | `enp0s3` | Non |
+
+### 2. Configuration du Routeur (NAT et Routage)
+
+* **Routage IP :** Activation permanente via `net.ipv4.ip_forward=1`.
+* **Règle NAT (Masquerading) :**
+    ```bash
+    sudo iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE
+    ```
 
 ## II. Sécurité Réseau (Firewall Iptables)
 
-Les politiques par défaut sont `DROP` et seules les communications essentielles sont autorisées.
+Les politiques par défaut sont `DROP` pour minimiser la surface d'attaque.
 
-### 1. Règles du Routeur (`192.168.56.3`)
+### 1. Règles du Serveur Web (`192.168.56.10`)
 
-* Politiques : `INPUT DROP`, `FORWARD DROP`, `OUTPUT ACCEPT`.
-* Configuration : Règles NAT et `FORWARD` pour autoriser le trafic LAN vers WAN.
+Le serveur Web applique une politique `INPUT DROP`.
 
-### 2. Règles du Serveur Web (`192.168.56.10`)
-
-* Politique : `INPUT DROP`.
-* Configuration : Ouverture des ports `22` (SSH) et `80` (HTTP).
+* **Règles clés :**
+    ```bash
+    sudo iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+    sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+    sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+    sudo iptables -P INPUT DROP
+    sudo netfilter-persistent save
+    ```
 
 ## III. Déploiement des Services DNS et Web
 
 ### 1. Service DNS (BIND9 sur le Routeur)
 
-BIND9 gère la zone `entreprise.local`. L'enregistrement clé est :
-* `web.entreprise.local` $\rightarrow$ `192.168.56.10`
+BIND9 gère la zone `entreprise.local`.
+
+* **Enregistrement clé :** `web.entreprise.local` $\rightarrow$ `192.168.56.10`.
+* **Validation :** Le Client résout correctement le nom, confirmant la bonne configuration de `dns-nameservers` sur toutes les machines du LAN.
 
 ### 2. Serveur Web (Nginx Virtual Host)
 
-Le serveur Web utilise Nginx avec un Virtual Host pointant vers `/var/www/entreprise.local/html` pour le domaine `web.entreprise.local`.
+Le service Nginx délivre la page personnalisée de l'entreprise.
 
-* **Validation finale :** `curl http://web.entreprise.local` retourne le contenu personnalisé.
+* **Vhost (extrait) :**
+    ```nginx
+    server {
+        listen 80;
+        server_name web.entreprise.local;
+        root /var/www/entreprise.local/html;
+        index index.html;
+        # ...
+    }
+    ```
+* **Validation finale :** Le test `curl http://web.entreprise.local` affiche le contenu HTML personnalisé, confirmant le bon fonctionnement de l'ensemble de la chaîne.
 
 ## IV. Stratégie de Résilience (Sauvegarde et Restauration)
 
 ### 1. Stratégie de Sauvegarde Automatisée
 
-* **Méthode :** `rsync` via SSH (Clé SSH sans *passphrase*).
-* **Destination :** Le **Routeur** (`192.168.56.3`) dans `/mnt/backups/webserver`.
+* **Méthode :** `rsync` incrémentielle via SSH (Authentification par clé SSH sans *passphrase*). 
 * **Automatisation :** Tâche `cron` quotidienne pour `root` (`0 2 * * *`).
 
 #### Script de Sauvegarde (`/usr/local/bin/backup_web.sh`)
@@ -57,50 +79,46 @@ USER="stark"; HOST="192.168.56.3"; DESTINATION="/mnt/backups/webserver"
 IDENTITY_FILE="/home/stark/.ssh/id_rsa" 
 
 CRITICAL_FILES=(
-    "/var/www/entreprise.local"   # Contenu Web Personnalisé
+    "/var/www/entreprise.local"   # Contenu Web Personnalisé (le plus important)
     "/etc/nginx"                  # Configuration Nginx
+    "/etc/iptables"               # Règles de Pare-feu
     # ... autres fichiers critiques
 )
 
 for FILE in "${CRITICAL_FILES[@]}"; do
     sudo rsync -avzu -e "ssh -i $IDENTITY_FILE" "$FILE" "$USER"@"$HOST":"$DESTINATION"
-done 
+done
 ```
+### 2. Procédure de Restauration (Reprise après Sinistre)
+La stratégie couvre la restauration complète après sinistre total (méthode privilégiée pour la démonstration) et la récupération granulaire (erreur humaine).
 
-# 2. Procédure de Restauration (Reprise après Sinistre)
-La procédure de restauration est déclenchée suite à une panne du Serveur Web et vise à restaurer le service avec un minimum d'interruption en maintenant l'adresse IP (192.168.56.10).
+### A. Restauration Complète (Sinistre Total)
+Procédure : Déploiement d'une VM de remplacement (clonée), rétablissement de la clé SSH, et exécution du script de restauration.
+Script de Restauration (sudo /usr/local/bin/restore_web.sh)
 
-## Étapes de la Restauration
-
-1. Déploiement du Remplacement : Éteindre la VM Serveur Web défaillante. Déployer une nouvelle VM (via clonage de l'ancienne) en conservant l'IP 192.168.56.10.
-
-2. Rétablissement de la Confiance SSH : Sur la nouvelle VM, générer une nouvelle paire de clés SSH (ssh-keygen) pour l'utilisateur stark et copier la clé publique sur le Routeur (ssh-copy-id).
-
-3. Préparation du Script : S'assurer que le script /usr/local/bin/restore_web.sh est présent et exécutable sur la nouvelle VM.
-
-4. Exécution de la Restauration : Lancer le script pour rapatrier les données et recharger les services.
-
-5. Validation : Vérifier l'accès au site Web (curl http://web.entreprise.local).
-Script de Restauration (/usr/local/bin/restore_web.sh)
-
-
-
-### Le serveur doit avoir la même IP (192.168.56.10) et une clé SSH valide.
+```bash
+#!/bin/bash
+# Le serveur doit avoir l'IP 192.168.56.10 et une clé SSH valide.
 USER="stark"; HOST="192.168.56.3"; SOURCE="/mnt/backups/webserver"
 IDENTITY_FILE="/home/stark/.ssh/id_rsa"; WEB_CONTENT="/var/www/entreprise.local"
 
-### 1. Restauration des fichiers du site (avec suppression des fichiers non sauvegardés)
-echo "1/3. Restauration du contenu web et des Vhosts Nginx..."
+# 1. Restauration des fichiers (avec suppression des fichiers non sauvegardés)
 sudo rsync -avzu --delete -e "ssh -i $IDENTITY_FILE" "$USER"@"$HOST":"$SOURCE"/entreprise.local/ "$WEB_CONTENT"/
 
-### 2. Restauration des configurations (écrasement des fichiers locaux)
-echo "2/3. Restauration des fichiers de configuration..."
+# 2. Restauration des configurations
 sudo rsync -avzu -e "ssh -i $IDENTITY_FILE" "$USER"@"$HOST":"$SOURCE"/etc/nginx/ /etc/nginx/
 sudo rsync -avzu -e "ssh -i $IDENTITY_FILE" "$USER"@"$HOST":"$SOURCE"/etc/iptables/ /etc/iptables/
 
-### 3. Application des nouvelles configurations
-echo "3/3. Application des nouvelles configurations..."
+# 3. Application des nouvelles configurations
 sudo netfilter-persistent reload 
-sudo systemctl restart nginx     
+sudo systemctl restart nginx
 
-echo "--- Restauration terminée ---"
+
+B. Récupération Granulaire (Erreur Humaine sur Serveur de Production)
+Pour restaurer un seul dossier (ex: /etc/nginx/) sans arrêter le service ni utiliser le script complet.
+
+Commande (Exemple de récupération ciblée) :
+sudo rsync -avz -e "ssh -i /home/stark/.ssh/id_rsa" \
+stark@192.168.56.3:/mnt/backups/webserver/etc/nginx/ \
+/etc/nginx/
+# Suivi de : sudo systemctl reload nginx

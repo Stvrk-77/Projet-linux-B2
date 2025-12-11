@@ -120,7 +120,6 @@ sudo systemctl restart nginx
 ```
 ### B. Récupération Granulaire (Erreur Humaine sur Serveur de Production)
 Pour restaurer un seul dossier (ex: /etc/nginx/) sans arrêter le service ni utiliser le script complet.
-
 Commande (Exemple de récupération ciblée) :
 ```bash
 sudo rsync -avz -e "ssh -i /home/stark/.ssh/id_rsa" \

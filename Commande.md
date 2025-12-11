@@ -39,7 +39,7 @@
 | 1  | Client         | Résolution DNS (Service BIND9)            | `dig web.entreprise.local`                          |
 | 2  | Client         | Test NAT / Routage                        | `curl google.com`                                   |
 | 3  | Client         | Service Web Final (Nginx, Vhost, Iptables) | `curl http://web.entreprise.local`                 |
-| 4  | Serveur Web    | Preuve de l'Écoute Nginx                  | `sudo ss -tuln | grep 80`                           |
+| 4  | Serveur Web    | Preuve de l'Écoute Nginx                  | ` sudo ss -tuln | grep 80 `                           |
 | 5  | Serveur Web    | Preuve du Pare-feu (Sécurité)             | `sudo iptables -L INPUT -n`                         |
 | 6  | Serveur Web    | Preuve Sauvegarde (SSH)                   | `ssh stark@192.168.56.3 exit`                       |
 
@@ -58,7 +58,8 @@ Nous allons prendre l'exemple de la restauration du dossier complet de configura
 
 ## Restauration Manuelle (Nginx)
 
-| Opération              | Contexte                                   | Commande |
-|------------------------|---------------------------------------------|----------|
-| Restauration Manuelle  | Serveur Web (Réparation d’un dossier spécifique) | `sudo rsync -avz -e "ssh -i /home/stark/.ssh/id_rsa" stark@192.168.56.3:/mnt/backups/webserver/etc/nginx/ /etc/nginx/` |
-| Action Complémentaire  | Après la restauration Nginx                 | `sudo systemctl reload nginx` |
+| Opération               | Contexte                                   | Commande |
+|-------------------------|--------------------------------------------|----------|
+| Restauration Manuelle   | Serveur Web (Réparation d’un dossier spécifique) | `sudo rsync -avz -e "ssh -i /home/stark/.ssh/id_rsa" stark@192.168.56.3:/mnt/backups/webserver/etc/nginx/ /etc/nginx/` |
+| Action Complémentaire   | Après la restauration Nginx                 | `sudo systemctl reload nginx` |
+| Restauration Complète   | Serveur Web de remplacement (Sinistre)     | `sudo /usr/local/bin/restore_web.sh` |

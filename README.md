@@ -1,3 +1,7 @@
+# Groupe de projet : 
+- Rodney NGUEMA
+- Mathéo MAUSSANT
+
 # 📄 Rapport Final de Projet d'Infrastructure Réseau et Services
 
 Ce document présente la configuration, le déploiement et la validation de l'infrastructure réseau et des services de l'entreprise, y compris la stratégie de résilience (Sauvegarde/Restauration).
@@ -113,12 +117,13 @@ sudo rsync -avzu -e "ssh -i $IDENTITY_FILE" "$USER"@"$HOST":"$SOURCE"/etc/iptabl
 sudo netfilter-persistent reload 
 sudo systemctl restart nginx
 
-
-B. Récupération Granulaire (Erreur Humaine sur Serveur de Production)
+```
+### B. Récupération Granulaire (Erreur Humaine sur Serveur de Production)
 Pour restaurer un seul dossier (ex: /etc/nginx/) sans arrêter le service ni utiliser le script complet.
-
 Commande (Exemple de récupération ciblée) :
+```bash
 sudo rsync -avz -e "ssh -i /home/stark/.ssh/id_rsa" \
 stark@192.168.56.3:/mnt/backups/webserver/etc/nginx/ \
 /etc/nginx/
 # Suivi de : sudo systemctl reload nginx
+``` 
